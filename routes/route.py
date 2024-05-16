@@ -1,12 +1,14 @@
 import os
-from fastapi import APIRouter, HTTPException, File, UploadFile,Form,Query
+from fastapi import APIRouter, HTTPException, File, UploadFile,Form,Query,Response
 from PIL import Image
 from io import BytesIO
 import json
 from typing import List,Annotated
 from uuid import uuid4
 import base64
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+import mimetypes
+
 Router = APIRouter()
 
 ALLOWED_IMAGE_FORMATS = ["image/jpeg", "image/png", "image/gif"]
@@ -95,12 +97,26 @@ async def getfile():
                                         })
                                 except json.JSONDecodeError:
                                     raise HTTPException(500, "JSON decode fail")
+                    elif f.endswith(".json"):
+                        jbp = os.path.join(root, f)
+                        with open(jbp, 'r') as jp:
+                            data = json.load(jp)
+                            if 'upload-type' in data and data['upload-type'] == "text-post":
+                                image_files.append({
+                                    "type": data.get('type'),
+                                    "title": data.get('title'),
+                                    "description": data.get('description')
+                                })
+
+
+                                     
+                        
         # Return as JSON array
         return JSONResponse(content={"image_files": image_files})
     except Exception as e:
         raise HTTPException(500, f"Error viewing files: {e}")
 
-@Router.get("/get_files_query", tags=['Upload_file'], name="Get all uploaded files", description="Show uploaded files")
+@Router.get("/get_files_query", tags=['get-file'], name="Get all uploaded files", description="Show uploaded files")
 async def getfile(title: str = Query(None, description="Filter by title"), description: str = Query(None, description="Filter by description")):
     try:
         image_files = []
@@ -136,3 +152,32 @@ async def getfile(title: str = Query(None, description="Filter by title"), descr
             raise HTTPException(400, "No such directory exists")
     except Exception as e:
         raise HTTPException(500, f"Error viewing files: {e}")
+
+async def encode_video(vf):
+    with open(vf, 'rb') as f:
+        while True:
+            chunk = f.read(1024)
+            if not chunk:
+                break
+            yield chunk
+        
+
+@Router.post("/write",tags=['Write something'])
+async def Write_Post(title:str,desription:str):
+    try:
+        tmp=[]
+        if not title and not desription or not title or not desription:
+            raise HTTPException(500,"Title and description is required")
+        odir=os.path.join(UPLOAD_DIR,f"{title}.json")
+        with open(odir,'w')as jfw:
+            tmp.append([
+                {
+                    "upload-type":"text-post",
+                    "title":title,
+                    "description":desription
+                }
+            ])
+            json.dump(tmp,jfw)
+            return Response("upload sucess!!",200)
+    except Exception as e:
+          raise HTTPException(500,"fail to write post {e}")
